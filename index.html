@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{
     --bg:#061f22; --bg2:#0a373a; --card:#ffffff; --ink:#0a373a; --muted:#5a7374;
@@ -23,11 +24,14 @@
   header.app{display:flex;align-items:center;justify-content:space-between;
     background:var(--card);color:var(--ink);border-radius:14px;padding:14px 20px;margin-bottom:18px;
     box-shadow:0 10px 30px rgba(0,0,0,.25)}
-  .brand{display:flex;align-items:center;gap:12px}
-  .brand .logo{width:38px;height:38px;border-radius:9px;background:var(--bg2);color:#fff;
+  .brand{display:flex;align-items:flex-end;gap:14px}
+  .header-logo img{height:46px;width:auto;display:block}
+  .header-logo .logo{width:38px;height:38px;border-radius:9px;background:var(--bg2);color:#fff;
     display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:18px}
-  .brand h1{font-size:17px;margin:0;letter-spacing:-.2px}
-  .brand small{display:block;color:var(--muted);font-weight:500;font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+  .header-text{display:flex;flex-direction:column;justify-content:flex-end}
+  .header-brand{height:26px;width:auto;display:block;margin-bottom:2px}
+  .header-fallback{font-size:18px;font-weight:700;color:var(--ink);letter-spacing:-.2px}
+  .header-tagline{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
   .who{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
   .who b{color:var(--ink);display:block;font-size:13px}
   .btn{font-family:var(--sans);font-weight:600;border:0;border-radius:9px;padding:10px 16px;
@@ -82,6 +86,10 @@
   .login .card{text-align:center;padding:34px}
   .login .logo-lg{width:64px;height:64px;border-radius:14px;background:var(--bg2);color:#fff;
     display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:28px;margin:0 auto 16px}
+  .login-icon{width:64px;height:64px;margin:0 auto 16px;display:grid;place-items:center}
+  .login-icon img{width:64px;height:64px;object-fit:contain;display:block}
+  .login-brand{height:30px;width:auto;display:block;margin:0 auto 4px}
+  .login-fallback{margin:0 0 4px}
   .login p{color:var(--muted);font-size:14px;line-height:1.55}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);
     color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.3);
@@ -100,10 +108,12 @@
   <!-- LOGIN -->
   <div id="login" class="login">
     <div class="card">
-      <div class="logo-lg">EB</div>
-      <h2>ElectroBotics</h2>
+      <div class="login-icon"><img src="logo-on.png" alt="ElectroBotics" onerror="this.parentElement.innerHTML='EB';this.parentElement.classList.add('logo-lg')"></div>
+      <img src="ElectroBotics_No_Makerspace.png" alt="ElectroBotics" class="login-brand" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <h2 class="login-fallback" style="display:none">ElectroBotics</h2>
       <div class="sub">Attendance &amp; Fees</div>
-      <p id="loginMsg">Checking your Google sign-in…<br><span class="spin"></span></p>
+      <p id="loginMsg">Sign in with your Google account to continue.</p>
+      <div id="gbtn" style="display:flex;justify-content:center"></div>
       <button id="retryBtn" class="btn amber hidden" onclick="boot()">Retry</button>
     </div>
   </div>
@@ -112,8 +122,12 @@
   <div id="app" class="hidden">
     <header class="app">
       <div class="brand">
-        <div class="logo">EB</div>
-        <div><h1>Attendance &amp; Fees</h1><small>ElectroBotics</small></div>
+        <div class="header-logo"><img src="logo-on.png" alt="ElectroBotics" onerror="this.parentElement.innerHTML='<div class=&quot;logo&quot;>EB</div>'"></div>
+        <div class="header-text">
+          <img src="ElectroBotics_No_Makerspace.png" alt="ElectroBotics" class="header-brand" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+          <div class="header-fallback" style="display:none">ElectroBotics</div>
+          <div class="header-tagline">Attendance &amp; Fees</div>
+        </div>
       </div>
       <div class="who"><b id="whoName">—</b><span id="whoRole"></span></div>
     </header>
@@ -181,7 +195,11 @@
 // ============ CONFIG ============
 // Paste your Apps Script Web App URL here after deploying (ends with /exec):
 const API = "https://script.google.com/macros/s/AKfycbxV62WTz5ty_Pc4o7H7d0e-15H0ydg_YPODj8zr69MEFiAFnmAEjRj7vLKXPGMbaQtz/exec";
+// Your Google OAuth Client ID (the same one your tracking app uses):
+const GOOGLE_CLIENT_ID = "1060454695062-vf1ajfodb8siesq7fk906rpind6fjc72.apps.googleusercontent.com";
 // ================================
+
+let ID_TOKEN = null;       // Google ID token (JWT) for the signed-in user
 
 let ME = null;
 let roster = [];           // current roster for marking
@@ -189,41 +207,72 @@ let markState = {};        // id -> status
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
 
-// GET via JSONP (avoids CORS; Apps Script supports callback param poorly, so use fetch text)
+// GET — include the Google ID token so the backend can identify the user
 async function apiGet(params){
+  if(ID_TOKEN) params = Object.assign({token: ID_TOKEN}, params);
   const url = API + "?" + new URLSearchParams(params).toString();
   const res = await fetch(url, {method:'GET'});
   return res.json();
 }
-// POST as text/plain to dodge CORS preflight that Apps Script can't answer
+// POST as text/plain to dodge CORS preflight; token travels in the body
 async function apiPost(body){
+  if(ID_TOKEN) body = Object.assign({token: ID_TOKEN}, body);
   const res = await fetch(API, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(body)});
   return res.json();
 }
 
-async function boot(){
-  document.getElementById('retryBtn').classList.add('hidden');
-  document.getElementById('loginMsg').innerHTML = 'Checking your Google sign-in…<br><span class="spin"></span>';
-  if(API.includes("PASTE_YOUR")){
-    document.getElementById('loginMsg').innerHTML = "Set the API URL in index.html first (the Apps Script /exec link).";
-    return;
-  }
+// Decode a JWT payload (for showing the email; the backend re-verifies it)
+function decodeJwt(t){
+  try{ return JSON.parse(decodeURIComponent(escape(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))))); }
+  catch(e){ return {}; }
+}
+
+// Called by Google Identity Services once the user picks an account
+async function onGoogleCredential(resp){
+  ID_TOKEN = resp.credential;
+  const msg = document.getElementById('loginMsg');
+  msg.innerHTML = 'Signing you in… <span class="spin"></span>';
+  document.getElementById('gbtn').style.display = 'none';
   try{
     const r = await apiGet({action:'whoami'});
     if(!r.ok){
-      let m = r.error==='not_authorized'
+      ID_TOKEN = null;
+      document.getElementById('gbtn').style.display = 'flex';
+      msg.innerHTML = r.error==='not_authorized'
         ? `Signed in as <b>${r.email||'?'}</b>, but this address isn’t in the Users tab. Ask the admin to add you.`
-        : "You’re not signed in to Google. Open this page while signed in to your Google account.";
-      document.getElementById('loginMsg').innerHTML = m;
-      document.getElementById('retryBtn').classList.remove('hidden');
+        : "Couldn’t verify your sign-in. Try again.";
       return;
     }
     ME = r;
     startApp();
   }catch(err){
-    document.getElementById('loginMsg').innerHTML = "Couldn’t reach the backend. Check the API URL and that the Web App is deployed for your account.";
-    document.getElementById('retryBtn').classList.remove('hidden');
+    ID_TOKEN = null;
+    document.getElementById('gbtn').style.display = 'flex';
+    msg.innerHTML = "Couldn’t reach the backend. Check the API URL and that the Web App is deployed.";
   }
+}
+
+let gisTries = 0;
+function boot(){
+  document.getElementById('retryBtn').classList.add('hidden');
+  const msg = document.getElementById('loginMsg');
+  if(API.includes("PASTE_YOUR") || GOOGLE_CLIENT_ID.includes("PASTE_YOUR")){
+    msg.textContent = "Set the API URL and Google Client ID in index.html first.";
+    return;
+  }
+  // Wait for the GIS script to load (async/defer), then render the button
+  if(typeof google === 'undefined' || !google.accounts || !google.accounts.id){
+    if(gisTries++ < 40){ setTimeout(boot, 150); return; }
+    msg.textContent = "Google sign-in didn’t load. Check your connection and retry.";
+    document.getElementById('retryBtn').classList.remove('hidden');
+    return;
+  }
+  msg.textContent = "Sign in with your Google account to continue.";
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: onGoogleCredential });
+  document.getElementById('gbtn').style.display = 'flex';
+  document.getElementById('gbtn').innerHTML = '';
+  google.accounts.id.renderButton(document.getElementById('gbtn'),
+    { theme:'filled_blue', size:'large', shape:'pill', text:'signin_with' });
 }
 
 function startApp(){
