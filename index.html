@@ -167,8 +167,12 @@
     <section id="view-attendance" class="view hidden">
       <div class="card">
         <h2>Attendance trends</h2>
-        <div class="sub">Per month — overall, or filtered to one student.</div>
+        <div class="sub">Per month — overall, by batch, or for one student.</div>
         <div class="row">
+          <div>
+            <label class="f">Batch</label>
+            <select id="aBatch" onchange="onTrendBatchChange()"><option value="">All batches</option></select>
+          </div>
           <div>
             <label class="f">Student</label>
             <select id="aStudent" onchange="loadTrend()"><option value="">All students (overall)</option></select>
@@ -199,7 +203,7 @@
 <script>
 // ============ CONFIG ============
 // Paste your Apps Script Web App URL here after deploying (ends with /exec):
-const API = "https://script.google.com/macros/s/AKfycbwhArUXZyJFHJN7Na-sqVzuvAn3usIDlvJl-I24ONBsfXISjR8h2bTOBFb7l-uqIOtY/exec";
+const API = "https://script.google.com/macros/s/AKfycbxVAfyQCdYsEiLD-c4LBvpBSTFdn59FatOCW_N9EX1wgK3ySJUZVW1336HXUOXsxoRD/exec";
 // Your Google OAuth Client ID (the same one your tracking app uses):
 const GOOGLE_CLIENT_ID = "1060454695062-vf1ajfodb8siesq7fk906rpind6fjc72.apps.googleusercontent.com";
 // ================================
@@ -349,7 +353,7 @@ function renderRoster(){
       <div class="seg">
         <button class="present ${s==='Present'?'on':''}" onclick="setStatus('${st.id}','Present')">Present</button>
         <button class="absent ${s==='Absent'?'on':''}" onclick="setStatus('${st.id}','Absent')">Absent</button>
-        <button class="leave ${s==='Leave'?'on':''}" onclick="setStatus('${st.id}','Leave')">Leave</button>
+        <button class="leave ${s==='Compensation'?'on':''}" onclick="setStatus('${st.id}','Compensation')">Compensation</button>
       </div></td></tr>`;
   });
   html += '</tbody></table>';
@@ -367,31 +371,54 @@ async function saveAttendance(){
 }
 
 // ---------- attendance trends ----------
+let trendStudents = [];   // full active roster cache for filtering by batch
 async function initTrendStudents(){
-  const sel = document.getElementById('aStudent');
-  if(sel.dataset.loaded) { loadTrend(); return; }
-  const r = await apiGet({action:'students'});
-  (r.students||[]).forEach(st=>{
-    const o=document.createElement('option'); o.value=st.id; o.textContent=`${st.name} (${st.id})`; sel.appendChild(o);
+  const bsel = document.getElementById('aBatch');
+  if(bsel.dataset.loaded){ loadTrend(); return; }
+  // load batches and full student list in parallel
+  const [b, s] = await Promise.all([
+    apiGet({action:'batches'}),
+    apiGet({action:'students'})
+  ]);
+  (b.batches||[]).forEach(name=>{
+    const o=document.createElement('option'); o.value=name; o.textContent=name; bsel.appendChild(o);
   });
-  sel.dataset.loaded='1';
+  trendStudents = s.students || [];
+  fillTrendStudents('');
+  bsel.dataset.loaded='1';
+  loadTrend();
+}
+// Populate the student dropdown, optionally limited to a batch
+function fillTrendStudents(batch){
+  const sel = document.getElementById('aStudent');
+  sel.innerHTML = '<option value="">All students (overall)</option>';
+  trendStudents
+    .filter(st=>!batch || st.batch===batch)
+    .forEach(st=>{
+      const o=document.createElement('option'); o.value=st.id; o.textContent=`${st.name} (${st.id})`; sel.appendChild(o);
+    });
+}
+// When batch changes: refilter students, reset student selection, reload
+function onTrendBatchChange(){
+  fillTrendStudents(document.getElementById('aBatch').value);
   loadTrend();
 }
 async function loadTrend(){
   const studentId = document.getElementById('aStudent').value;
+  const batch = document.getElementById('aBatch').value;
   const card = document.getElementById('trendCard');
   card.innerHTML='<div class="empty"><span class="spin"></span> Loading…</div>';
-  const r = await apiGet({action:'attendanceTrend', studentId});
+  const r = await apiGet({action:'attendanceTrend', studentId, batch});
   if(!r.ok){ card.innerHTML='<div class="empty">'+(r.error||'Error')+'</div>'; return; }
   const t = r.trend||[];
-  if(!t.length){ card.innerHTML='<div class="empty">No attendance recorded yet.</div>'; return; }
+  if(!t.length){ card.innerHTML='<div class="empty">No attendance recorded for this selection yet.</div>'; return; }
   const totP=t.reduce((a,x)=>a+x.present,0), totT=t.reduce((a,x)=>a+x.total,0);
   let html = `<div class="stat">
     <div class="s"><div class="n">${totT}</div><div class="l">Sessions logged</div></div>
     <div class="s"><div class="n amber">${totT?Math.round(totP/totT*100):0}%</div><div class="l">Overall present</div></div>
-  </div><table><thead><tr><th>Month</th><th>Present</th><th>Absent</th><th>Leave</th><th>%</th><th></th></tr></thead><tbody>`;
+  </div><table><thead><tr><th>Month</th><th>Present</th><th>Absent</th><th>Compensation</th><th>%</th><th></th></tr></thead><tbody>`;
   t.forEach(x=>{
-    html += `<tr><td class="mono">${x.month}</td><td>${x.present}</td><td>${x.absent}</td><td>${x.leave}</td>
+    html += `<tr><td class="mono">${x.month}</td><td>${x.present}</td><td>${x.absent}</td><td>${x.comp}</td>
       <td><span class="amberbox">${x.pct}%</span></td>
       <td style="width:160px"><div class="bar"><span style="width:${x.pct}%"></span></div></td></tr>`;
   });
