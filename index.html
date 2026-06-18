@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ElectroBotics · Attendance & Fees</title>
+<title>ElectroBotics · Attendance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
     --bg:#f4f9f9; --surface:#ffffff; --surface-alt:#edf6f7;
@@ -114,7 +115,7 @@
       <div class="login-icon"><img src="logo-on.png" alt="ElectroBotics" onerror="var p=this.parentElement;p.classList.add('logo-lg');p.textContent='EB'"></div>
       <img src="ElectroBotics_No_Makerspace.png" alt="ElectroBotics" class="login-brand" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='block'">
       <h2 class="login-fallback" style="display:none">ElectroBotics</h2>
-      <div class="sub">Attendance &amp; Fees</div>
+      <div class="sub">Attendance</div>
       <p id="loginMsg">Sign in with your Google account to continue.</p>
       <div id="gbtn" style="display:flex;justify-content:center"></div>
       <button id="retryBtn" class="btn amber hidden" onclick="boot()">Retry</button>
@@ -129,7 +130,7 @@
         <div class="header-text">
           <img src="ElectroBotics_No_Makerspace.png" alt="ElectroBotics" class="header-brand" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='block'">
           <div class="header-fallback" style="display:none">ElectroBotics</div>
-          <div class="header-tagline">Attendance &amp; Fees</div>
+          <div class="header-tagline">Attendance</div>
         </div>
       </div>
       <div class="who"><b id="whoName">—</b><span id="whoRole"></span></div>
@@ -165,7 +166,7 @@
     <section id="view-attendance" class="view hidden">
       <div class="card">
         <h2>Attendance trends</h2>
-        <div class="sub">Per month — overall, by batch, or for one student.</div>
+        <div class="sub">Filter by batch, student, month and year. Leave a filter blank to include all.</div>
         <div class="row">
           <div>
             <label class="f">Batch</label>
@@ -175,9 +176,30 @@
             <label class="f">Student</label>
             <select id="aStudent" onchange="loadTrend()"><option value="">All students (overall)</option></select>
           </div>
+          <div>
+            <label class="f">Month</label>
+            <select id="aMonth" onchange="loadTrend()">
+              <option value="">All months</option>
+              <option value="1">January</option><option value="2">February</option>
+              <option value="3">March</option><option value="4">April</option>
+              <option value="5">May</option><option value="6">June</option>
+              <option value="7">July</option><option value="8">August</option>
+              <option value="9">September</option><option value="10">October</option>
+              <option value="11">November</option><option value="12">December</option>
+            </select>
+          </div>
+          <div>
+            <label class="f">Year</label>
+            <select id="aYear" onchange="loadTrend()"><option value="">All years</option></select>
+          </div>
         </div>
       </div>
       <div class="card" id="trendCard"><div class="empty">Loading…</div></div>
+      <div class="card" id="chartCard">
+        <h2>Trend chart</h2>
+        <div class="sub" id="chartSub">Present % by month for the current selection.</div>
+        <div style="position:relative;height:300px"><canvas id="trendChart"></canvas></div>
+      </div>
     </section>
   </div>
 </div>
@@ -368,8 +390,21 @@ async function initTrendStudents(){
   });
   trendStudents = s.students || [];
   fillTrendStudents('');
+  // Populate Year dropdown: current year and a few back
+  const ysel = document.getElementById('aYear');
+  const thisYear = new Date().getFullYear();
+  for(let y=thisYear; y>=thisYear-4; y--){
+    const o=document.createElement('option'); o.value=y; o.textContent=y; ysel.appendChild(o);
+  }
   bsel.dataset.loaded='1';
   loadTrend();
+}
+// yyyy-MM -> "Jun 2026"
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtMonth(ym){
+  const p=String(ym).split('-');
+  if(p.length>=2){ const mi=parseInt(p[1],10)-1; if(mi>=0&&mi<12) return MONTHS[mi]+' '+p[0]; }
+  return ym;
 }
 // Populate the student dropdown, optionally limited to a batch
 function fillTrendStudents(batch){
@@ -386,27 +421,63 @@ function onTrendBatchChange(){
   fillTrendStudents(document.getElementById('aBatch').value);
   loadTrend();
 }
+let trendChartObj = null;
 async function loadTrend(){
   const studentId = document.getElementById('aStudent').value;
   const batch = document.getElementById('aBatch').value;
+  const month = document.getElementById('aMonth').value;
+  const year = document.getElementById('aYear').value;
   const card = document.getElementById('trendCard');
   card.innerHTML='<div class="empty"><span class="spin"></span> Loading…</div>';
-  const r = await apiGet({action:'attendanceTrend', studentId, batch});
-  if(!r.ok){ card.innerHTML='<div class="empty">'+(r.error||'Error')+'</div>'; return; }
+  const r = await apiGet({action:'attendanceTrend', studentId, batch, month, year});
+  if(!r.ok){ card.innerHTML='<div class="empty">'+(r.error||'Error')+'</div>'; drawTrendChart([]); return; }
   const t = r.trend||[];
-  if(!t.length){ card.innerHTML='<div class="empty">No attendance recorded for this selection yet.</div>'; return; }
+  if(!t.length){ card.innerHTML='<div class="empty">No attendance recorded for this selection yet.</div>'; drawTrendChart([]); return; }
   const totP=t.reduce((a,x)=>a+x.present,0), totT=t.reduce((a,x)=>a+x.total,0);
   let html = `<div class="stat">
     <div class="s"><div class="n">${totT}</div><div class="l">Sessions logged</div></div>
     <div class="s"><div class="n amber">${totT?Math.round(totP/totT*100):0}%</div><div class="l">Overall present</div></div>
   </div><table><thead><tr><th>Month</th><th>Present</th><th>Absent</th><th>Compensation</th><th>%</th><th></th></tr></thead><tbody>`;
   t.forEach(x=>{
-    html += `<tr><td class="mono">${x.month}</td><td>${x.present}</td><td>${x.absent}</td><td>${x.comp}</td>
+    html += `<tr><td>${fmtMonth(x.month)}</td><td>${x.present}</td><td>${x.absent}</td><td>${x.comp}</td>
       <td><span class="amberbox">${x.pct}%</span></td>
       <td style="width:160px"><div class="bar"><span style="width:${x.pct}%"></span></div></td></tr>`;
   });
   html+='</tbody></table>';
   card.innerHTML=html;
+  drawTrendChart(t);
+}
+
+function drawTrendChart(t){
+  const cv = document.getElementById('trendChart');
+  if(!cv || typeof Chart==='undefined') return;
+  if(trendChartObj){ trendChartObj.destroy(); trendChartObj=null; }
+  if(!t.length){ return; }
+  const labels = t.map(x=>fmtMonth(x.month));
+  const css = getComputedStyle(document.documentElement);
+  const accent = css.getPropertyValue('--accent').trim() || '#008fa0';
+  const good = css.getPropertyValue('--good').trim() || '#8ab600';
+  const bad  = css.getPropertyValue('--bad').trim()  || '#d76241';
+  const amber= css.getPropertyValue('--amber').trim()|| '#eab43a';
+  trendChartObj = new Chart(cv, {
+    type:'bar',
+    data:{ labels, datasets:[
+      { label:'Present', data:t.map(x=>x.present), backgroundColor:good, stack:'s' },
+      { label:'Absent', data:t.map(x=>x.absent), backgroundColor:bad, stack:'s' },
+      { label:'Compensation', data:t.map(x=>x.comp), backgroundColor:amber, stack:'s' },
+      { type:'line', label:'Present %', data:t.map(x=>x.pct), borderColor:accent, backgroundColor:accent,
+        yAxisID:'y2', tension:.3, pointRadius:4, fill:false }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ font:{family:'DM Sans'} } } },
+      scales:{
+        x:{ stacked:true, ticks:{font:{family:'JetBrains Mono'}} },
+        y:{ stacked:true, beginAtZero:true, title:{display:true,text:'Sessions'} },
+        y2:{ position:'right', beginAtZero:true, max:100, grid:{drawOnChartArea:false},
+             title:{display:true,text:'Present %'}, ticks:{callback:v=>v+'%'} }
+      }
+    }
+  });
 }
 
 boot();
