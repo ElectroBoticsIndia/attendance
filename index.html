@@ -137,6 +137,10 @@
   .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--line);
     border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-3px}
   @keyframes sp{to{transform:rotate(360deg)}}
+  .lbl-spin{display:none;width:11px;height:11px;border:2px solid var(--line);
+    border-top-color:var(--accent);border-radius:50%;vertical-align:-1px;margin-left:4px;
+    animation:sp .7s linear infinite}
+  .lbl-spin.on{display:inline-block}
   .hidden{display:none!important}
   @media(max-width:560px){
     .brand h1{font-size:15px}
@@ -211,11 +215,11 @@
         <div class="sub">Choose country and batch, then set status only for the students you need. Unmarked students aren't saved.</div>
         <div class="row">
           <div>
-            <label class="f">Country</label>
+            <label class="f">Country <span class="lbl-spin" id="spin-mCountry"></span></label>
             <select id="mCountry" onchange="onMarkCountryChange()"></select>
           </div>
           <div>
-            <label class="f">Batch</label>
+            <label class="f">Batch <span class="lbl-spin" id="spin-mBatch"></span></label>
             <select id="mBatch" onchange="onMarkBatchChange()"><option value="">Select country first…</option></select>
           </div>
           <div>
@@ -243,11 +247,11 @@
         <div class="sub">Defaults to this month. Widen the filters (e.g. Month = All) for a longer trend.</div>
         <div class="row">
           <div>
-            <label class="f">Country</label>
+            <label class="f">Country <span class="lbl-spin" id="spin-aCountry"></span></label>
             <select id="aCountry" onchange="onTrendCountryChange()"><option value="">All countries</option></select>
           </div>
           <div>
-            <label class="f">Batch</label>
+            <label class="f">Batch <span class="lbl-spin" id="spin-aBatch"></span></label>
             <select id="aBatch" onchange="onTrendBatchChange()"><option value="">All batches</option></select>
           </div>
           <div>
@@ -300,6 +304,12 @@ let roster = [];           // current roster for marking
 let markState = {};        // id -> status
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+
+// Show/hide the small spinner next to a field label (id like 'mCountry')
+function labelSpin(fieldId, on){
+  const el=document.getElementById('spin-'+fieldId);
+  if(el) el.classList.toggle('on', !!on);
+}
 
 function toggleProfile(e){
   if(e) e.stopPropagation();
@@ -457,8 +467,9 @@ function makeBatchKey(country, timing){
 // ---------- countries, batches & roster ----------
 async function loadCountries(){
   const sel = document.getElementById('mCountry');
-  sel.innerHTML = '<option>Loading…</option>'; sel.disabled = true;
+  sel.innerHTML = '<option>Loading…</option>'; sel.disabled = true; labelSpin('mCountry', true);
   const r = await apiGet({action:'countries'});
+  labelSpin('mCountry', false);
   if(!r.ok || !r.countries){
     sel.innerHTML = '<option value="">Couldn’t load — tap to retry</option>';
     sel.disabled = false; sel.onclick = ()=>{ sel.onclick=null; loadCountries(); };
@@ -475,8 +486,9 @@ async function onMarkCountryChange(){
   const bsel = document.getElementById('mBatch');
   document.getElementById('mTutor').innerHTML = '<option value="">All tutors</option>';
   if(!country){ bsel.innerHTML = '<option value="">Select country first…</option>'; loadRoster(); return; }
-  bsel.innerHTML = '<option>Loading batches…</option>'; bsel.disabled = true;
+  bsel.innerHTML = '<option>Loading batches…</option>'; bsel.disabled = true; labelSpin('mBatch', true);
   const r = await apiGet({action:'batches', country});
+  labelSpin('mBatch', false);
   bsel.disabled = false;
   bsel.innerHTML = '<option value="">Select a batch…</option>' +
     ((r.batches)||[]).map(b=>`<option>${b}</option>`).join('');
@@ -581,15 +593,18 @@ async function initTrendStudents(){
 
   // Always re-fetch fresh when the view is opened. Reset every filter first.
   card.innerHTML = '<div class="empty"><span class="spin"></span> Loading…</div>';
-  csel.innerHTML = '<option value="">All countries</option>';
+  csel.innerHTML = '<option>Loading…</option>';
   bsel.innerHTML = '<option value="">All batches</option>';
   ssel.innerHTML = '<option value="">All students</option>';
+  labelSpin('aCountry', true);
 
   // Load countries and the full student list, fully awaited
   const [c, s] = await Promise.all([
     apiGet({action:'countries'}),
     apiGet({action:'students'})
   ]);
+  labelSpin('aCountry', false);
+  csel.innerHTML = '<option value="">All countries</option>';
   (c.countries||[]).forEach(name=>{
     const o=document.createElement('option'); o.value=name; o.textContent=name; csel.appendChild(o);
   });
@@ -638,8 +653,9 @@ async function onTrendCountryChange(){
     bsel.innerHTML = '<option value="">All batches</option>';
     fillTrendStudents('', ''); loadTrend(); return;
   }
-  bsel.innerHTML = '<option>Loading…</option>'; bsel.disabled = true;
+  bsel.innerHTML = '<option>Loading…</option>'; bsel.disabled = true; labelSpin('aBatch', true);
   const r = await apiGet({action:'batches', country});
+  labelSpin('aBatch', false);
   bsel.disabled = false;
   bsel.innerHTML = '<option value="">All batches</option>' +
     ((r.batches)||[]).map(b=>`<option>${b}</option>`).join('');
