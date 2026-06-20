@@ -61,7 +61,8 @@
   .btn.amber:hover{filter:brightness(1.05)}
   .btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
   .btn.sm{padding:6px 12px;font-size:13px}
-  .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .tabs{display:flex;gap:8px;margin-bottom:16px}
+  .tab{flex:1;text-align:center}
   .tab{background:#fff;color:var(--accent);border:1px solid var(--line);
     border-radius:9px;padding:9px 16px;cursor:pointer;font-weight:600;font-size:14px;transition:all .15s}
   .tab:hover{border-color:var(--accent)}
@@ -141,9 +142,10 @@
     .brand h1{font-size:15px}
     /* status toggle + count keep comfortable sizes; table scrolls horizontally if needed */
     .seg{width:auto}
+    .seg button{padding:8px 11px;font-size:13px}
     .lbl-full{display:none}
     .lbl-short{display:inline}
-    .status-cell{flex-wrap:nowrap;gap:8px}
+    .status-cell{flex-wrap:nowrap;gap:7px}
     table{font-size:13px}
     th,td{padding:8px 6px}
     .stu-tutor{font-size:12px}
@@ -206,11 +208,15 @@
     <section id="view-mark" class="view hidden">
       <div class="card">
         <h2>Mark attendance</h2>
-        <div class="sub">Choose a batch and date, then set status only for the students you need. Unmarked students aren't saved.</div>
+        <div class="sub">Choose country and batch, then set status only for the students you need. Unmarked students aren't saved.</div>
         <div class="row">
           <div>
+            <label class="f">Country</label>
+            <select id="mCountry" onchange="onMarkCountryChange()"></select>
+          </div>
+          <div>
             <label class="f">Batch</label>
-            <select id="mBatch" onchange="onMarkBatchChange()"></select>
+            <select id="mBatch" onchange="onMarkBatchChange()"><option value="">Select country first…</option></select>
           </div>
           <div>
             <label class="f">Tutor</label>
@@ -234,8 +240,12 @@
     <section id="view-attendance" class="view hidden">
       <div class="card">
         <h2>Attendance trends</h2>
-        <div class="sub">Filter by batch, student, month and year. Leave a filter blank to include all.</div>
+        <div class="sub">Defaults to this month. Widen the filters (e.g. Month = All) for a longer trend.</div>
         <div class="row">
+          <div>
+            <label class="f">Country</label>
+            <select id="aCountry" onchange="onTrendCountryChange()"><option value="">All countries</option></select>
+          </div>
           <div>
             <label class="f">Batch</label>
             <select id="aBatch" onchange="onTrendBatchChange()"><option value="">All batches</option></select>
@@ -243,6 +253,10 @@
           <div>
             <label class="f">Student</label>
             <select id="aStudent" onchange="loadTrend()"><option value="">All students (overall)</option></select>
+          </div>
+          <div>
+            <label class="f">Year</label>
+            <select id="aYear" onchange="loadTrend()"><option value="">All years</option></select>
           </div>
           <div>
             <label class="f">Month</label>
@@ -255,10 +269,6 @@
               <option value="9">September</option><option value="10">October</option>
               <option value="11">November</option><option value="12">December</option>
             </select>
-          </div>
-          <div>
-            <label class="f">Year</label>
-            <select id="aYear" onchange="loadTrend()"><option value="">All years</option></select>
           </div>
         </div>
       </div>
@@ -404,7 +414,7 @@ function startApp(){
   // Build tabs by role
   const tabs = [];
   if(ME.role==='tutor' || ME.role==='admin') tabs.push(['view-mark','Mark attendance']);
-  if(ME.role==='admin'){ tabs.push(['view-attendance','Attendance trends']); }
+  if(ME.role==='tutor' || ME.role==='admin'){ tabs.push(['view-attendance','Attendance trends']); }
   const tabBar = document.getElementById('tabs');
   tabBar.innerHTML='';
   tabs.forEach(([id,label],i)=>{
@@ -417,7 +427,7 @@ function startApp(){
 
   // default date = today
   document.getElementById('mDate').value = new Date().toISOString().slice(0,10);
-  loadBatches();
+  loadCountries();
 }
 
 function showView(id, btn){
@@ -428,18 +438,46 @@ function showView(id, btn){
   if(id==='view-attendance') initTrendStudents();
 }
 
-// ---------- batches & roster ----------
-async function loadBatches(){
-  const r = await apiGet({action:'batches'});
-  if(!r.ok) return;
-  const sel = document.getElementById('mBatch');
-  sel.innerHTML = '<option value="">Select a batch…</option>' +
-    r.batches.map(b=>`<option>${b}</option>`).join('');
+// Combine a country and a batch timing into the internal key the backend uses.
+function makeBatchKey(country, timing){
+  if(country && timing) return country + ' · ' + timing;
+  return timing || country || '';
+}
+
+// ---------- countries, batches & roster ----------
+async function loadCountries(){
+  const sel = document.getElementById('mCountry');
+  sel.innerHTML = '<option>Loading…</option>'; sel.disabled = true;
+  const r = await apiGet({action:'countries'});
+  if(!r.ok || !r.countries){
+    sel.innerHTML = '<option value="">Couldn’t load — tap to retry</option>';
+    sel.disabled = false; sel.onclick = ()=>{ sel.onclick=null; loadCountries(); };
+    return;
+  }
+  sel.disabled = false;
+  sel.innerHTML = '<option value="">Select a country…</option>' +
+    r.countries.map(c=>`<option>${c}</option>`).join('');
+}
+
+// When country changes: load that country's batch timings
+async function onMarkCountryChange(){
+  const country = document.getElementById('mCountry').value;
+  const bsel = document.getElementById('mBatch');
+  document.getElementById('mTutor').innerHTML = '<option value="">All tutors</option>';
+  if(!country){ bsel.innerHTML = '<option value="">Select country first…</option>'; loadRoster(); return; }
+  bsel.innerHTML = '<option>Loading batches…</option>'; bsel.disabled = true;
+  const r = await apiGet({action:'batches', country});
+  bsel.disabled = false;
+  bsel.innerHTML = '<option value="">Select a batch…</option>' +
+    ((r.batches)||[]).map(b=>`<option>${b}</option>`).join('');
+  loadRoster();
 }
 
 // When batch changes: refresh the tutor list for that batch, then load roster
 async function onMarkBatchChange(){
-  const batch = document.getElementById('mBatch').value;
+  const country = document.getElementById('mCountry').value;
+  const timing = document.getElementById('mBatch').value;
+  const batch = makeBatchKey(country, timing);
   const tsel = document.getElementById('mTutor');
   tsel.innerHTML = '<option value="">All tutors</option>';
   if(batch){
@@ -452,11 +490,13 @@ async function onMarkBatchChange(){
 }
 
 async function loadRoster(){
-  const batch = document.getElementById('mBatch').value;
+  const country = document.getElementById('mCountry').value;
+  const timing = document.getElementById('mBatch').value;
+  const batch = makeBatchKey(country, timing);
   const tutor = document.getElementById('mTutor').value;
   const date = document.getElementById('mDate').value;
   const box = document.getElementById('roster');
-  if(!batch){ box.innerHTML='<div class="empty">Pick a batch to load students.</div>'; document.getElementById('saveBar').classList.add('hidden'); return;}
+  if(!timing){ box.innerHTML='<div class="empty">Pick a country and batch to load students.</div>'; document.getElementById('saveBar').classList.add('hidden'); return;}
   box.innerHTML='<div class="empty"><span class="spin"></span> Loading roster…</div>';
   const [s, prior] = await Promise.all([
     apiGet({action:'students', batch, tutor}),
@@ -522,25 +562,28 @@ async function saveAttendance(){
 // ---------- attendance trends ----------
 let trendStudents = [];   // full active roster cache for filtering by batch
 async function initTrendStudents(){
-  const bsel = document.getElementById('aBatch');
-  if(bsel.dataset.loaded){ loadTrend(); return; }
-  // load batches and full student list in parallel
-  const [b, s] = await Promise.all([
-    apiGet({action:'batches'}),
+  const csel = document.getElementById('aCountry');
+  if(csel.dataset.loaded){ loadTrend(); return; }
+  // Load countries and the full student list in parallel
+  const [c, s] = await Promise.all([
+    apiGet({action:'countries'}),
     apiGet({action:'students'})
   ]);
-  (b.batches||[]).forEach(name=>{
-    const o=document.createElement('option'); o.value=name; o.textContent=name; bsel.appendChild(o);
+  (c.countries||[]).forEach(name=>{
+    const o=document.createElement('option'); o.value=name; o.textContent=name; csel.appendChild(o);
   });
   trendStudents = s.students || [];
   fillTrendStudents('');
-  // Populate Year dropdown: current year and a few back
+  // Year dropdown: current year and a few back; default to current year
   const ysel = document.getElementById('aYear');
-  const thisYear = new Date().getFullYear();
+  const now = new Date();
+  const thisYear = now.getFullYear();
   for(let y=thisYear; y>=thisYear-4; y--){
     const o=document.createElement('option'); o.value=y; o.textContent=y; ysel.appendChild(o);
   }
-  bsel.dataset.loaded='1';
+  ysel.value = String(thisYear);                         // default: current year
+  document.getElementById('aMonth').value = String(now.getMonth()+1); // default: current month
+  csel.dataset.loaded='1';
   loadTrend();
 }
 // yyyy-MM -> "Jun 2026"
@@ -550,27 +593,49 @@ function fmtMonth(ym){
   if(p.length>=2){ const mi=parseInt(p[1],10)-1; if(mi>=0&&mi<12) return MONTHS[mi]+' '+p[0]; }
   return ym;
 }
-// Populate the student dropdown, optionally limited to a batch
-function fillTrendStudents(batch){
+// Populate the student dropdown, optionally limited to a batch key
+function fillTrendStudents(batchKey){
   const sel = document.getElementById('aStudent');
   sel.innerHTML = '<option value="">All students (overall)</option>';
   trendStudents
-    .filter(st=>!batch || st.batch===batch)
+    .filter(st=>!batchKey || st.batch===batchKey)
     .forEach(st=>{
       const o=document.createElement('option'); o.value=st.id; o.textContent=`${st.name} (${st.id})`; sel.appendChild(o);
     });
 }
-// When batch changes: refilter students, reset student selection, reload
-function onTrendBatchChange(){
-  fillTrendStudents(document.getElementById('aBatch').value);
+// When country changes: load that country's batch timings, reset student
+async function onTrendCountryChange(){
+  const country = document.getElementById('aCountry').value;
+  const bsel = document.getElementById('aBatch');
+  if(!country){
+    bsel.innerHTML = '<option value="">All batches</option>';
+    fillTrendStudents(''); loadTrend(); return;
+  }
+  bsel.innerHTML = '<option>Loading…</option>'; bsel.disabled = true;
+  const r = await apiGet({action:'batches', country});
+  bsel.disabled = false;
+  bsel.innerHTML = '<option value="">All batches</option>' +
+    ((r.batches)||[]).map(b=>`<option>${b}</option>`).join('');
+  fillTrendStudents('');
   loadTrend();
+}
+// When batch changes: refilter students to that batch key, reload
+function onTrendBatchChange(){
+  fillTrendStudents(trendBatchKey());
+  loadTrend();
+}
+// Build the full batch key from the trends Country + Batch selection
+function trendBatchKey(){
+  const country = document.getElementById('aCountry').value;
+  const timing = document.getElementById('aBatch').value;
+  return makeBatchKey(country, timing);
 }
 let trendChartObj = null;
 let lastTrendData = null;   // cached for redraw on viewport change
 let lastWasMobile = (window.innerWidth<=560);
 async function loadTrend(){
   const studentId = document.getElementById('aStudent').value;
-  const batch = document.getElementById('aBatch').value;
+  const batch = trendBatchKey();
   const month = document.getElementById('aMonth').value;
   const year = document.getElementById('aYear').value;
   const card = document.getElementById('trendCard');
