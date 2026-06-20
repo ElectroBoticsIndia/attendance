@@ -62,9 +62,9 @@
   .btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
   .btn.sm{padding:6px 12px;font-size:13px}
   .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-  .tab{background:var(--surface);color:var(--muted);border:1px solid var(--line);
-    border-radius:999px;padding:8px 16px;cursor:pointer;font-weight:600;font-size:14px;transition:all .2s}
-  .tab:hover{border-color:var(--accent);color:var(--accent)}
+  .tab{background:#fff;color:var(--accent);border:1px solid var(--line);
+    border-radius:9px;padding:9px 16px;cursor:pointer;font-weight:600;font-size:14px;transition:all .15s}
+  .tab:hover{border-color:var(--accent)}
   .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .card{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:16px;
     box-shadow:var(--shadow)}
@@ -141,6 +141,8 @@
     .brand h1{font-size:15px}
     /* status toggle + count keep comfortable sizes; table scrolls horizontally if needed */
     .seg{width:auto}
+    .lbl-full{display:none}
+    .lbl-short{display:inline}
     .status-cell{flex-wrap:nowrap;gap:8px}
     table{font-size:13px}
     th,td{padding:8px 6px}
@@ -486,8 +488,8 @@ function renderRoster(){
       <td class="stu-tutor">${st.tutor||'—'}</td>
       <td><div class="status-cell">
         <div class="seg">
-          <button class="present ${s==='Present'?'on':''}" onclick="setStatus('${st.id}','Present')">Present</button>
-          <button class="absent ${s==='Absent'?'on':''}" onclick="setStatus('${st.id}','Absent')">Absent</button>
+          <button class="present ${s==='Present'?'on':''}" onclick="setStatus('${st.id}','Present')"><span class="lbl-full">Present</span><span class="lbl-short">Pres.</span></button>
+          <button class="absent ${s==='Absent'?'on':''}" onclick="setStatus('${st.id}','Absent')"><span class="lbl-full">Absent</span><span class="lbl-short">Abs.</span></button>
         </div>${countSel}
       </div></td></tr>`;
   });
