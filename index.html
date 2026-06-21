@@ -179,7 +179,7 @@
       <div class="login-icon"><img src="logo-on.png" alt="ElectroBotics" onerror="var p=this.parentElement;p.classList.add('logo-lg');p.textContent='EB'"></div>
       <img src="ElectroBotics_No_Makerspace.png" alt="ElectroBotics" class="login-brand" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='block'">
       <h2 class="login-fallback" style="display:none">ElectroBotics</h2>
-      <div class="sub">Attendance</div>
+      <div class="sub">Attendance &amp; Assignments</div>
       <p id="loginMsg">Sign in with your Google account to continue.</p>
       <div id="gbtn" style="display:flex;justify-content:center"></div>
       <button id="retryBtn" class="btn amber hidden" onclick="boot()">Retry</button>
@@ -194,7 +194,7 @@
         <div class="header-text">
           <img src="ElectroBotics_No_Makerspace.png" alt="ElectroBotics" class="header-brand" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='block'">
           <div class="header-fallback" style="display:none">ElectroBotics</div>
-          <div class="header-tagline">Attendance</div>
+          <div class="header-tagline">Attendance &amp; Assignments</div>
         </div>
       </div>
       <div class="who" id="whoWrap">
@@ -329,8 +329,8 @@ const MOD_LABELS = {
     posDates:'Present dates'
   },
   assignments: {
-    markTab:'Record submissions', trendTab:'Submission trends',
-    markHeading:'Record submissions',
+    markTab:'Demo submissions', trendTab:'Submission trends',
+    markHeading:'Demo submissions',
     markSub:"Choose country and batch, then set submission status only for the students you need. Unmarked students aren't saved.",
     trendHeading:'Submission trends',
     pos:'Submitted', neg:'Not submitted', posShort:'Sub.', negShort:'Not sub.',
