@@ -255,6 +255,10 @@
             <select id="aBatch" onchange="onTrendBatchChange()"><option value="">All batches</option></select>
           </div>
           <div>
+            <label class="f">Tutor <span class="lbl-spin" id="spin-aTutor"></span></label>
+            <select id="aTutor" onchange="onTrendTutorChange()"><option value="">All tutors</option></select>
+          </div>
+          <div>
             <label class="f">Student</label>
             <select id="aStudent" onchange="loadTrend()"><option value="">All students</option></select>
           </div>
@@ -332,7 +336,7 @@ function signOut(){
   lastTrendData = null;
   if(trendChartObj){ try{ trendChartObj.destroy(); }catch(e){} trendChartObj = null; }
   // Reset mark-attendance and trends filter controls to their initial state
-  ['mCountry','mBatch','mTutor','aCountry','aBatch','aStudent','aYear','aMonth'].forEach(id=>{
+  ['mCountry','mBatch','mTutor','aCountry','aBatch','aTutor','aStudent','aYear','aMonth'].forEach(id=>{
     const el=document.getElementById(id); if(el){ el.innerHTML=''; el.value=''; }
   });
   const rb=document.getElementById('roster'); if(rb) rb.innerHTML='';
@@ -587,6 +591,7 @@ async function initTrendStudents(){
   const csel = document.getElementById('aCountry');
   const bsel = document.getElementById('aBatch');
   const ssel = document.getElementById('aStudent');
+  const tsel = document.getElementById('aTutor');
   const ysel = document.getElementById('aYear');
   const msel = document.getElementById('aMonth');
   const card = document.getElementById('trendCard');
@@ -595,6 +600,7 @@ async function initTrendStudents(){
   card.innerHTML = '<div class="empty"><span class="spin"></span> Loading…</div>';
   csel.innerHTML = '<option>Loading…</option>';
   bsel.innerHTML = '<option value="">All batches</option>';
+  tsel.innerHTML = '<option value="">All tutors</option>';
   ssel.innerHTML = '<option value="">All students</option>';
   labelSpin('aCountry', true);
 
@@ -609,7 +615,8 @@ async function initTrendStudents(){
     const o=document.createElement('option'); o.value=name; o.textContent=name; csel.appendChild(o);
   });
   trendStudents = s.students || [];
-  fillTrendStudents('', '');
+  await loadTrendTutors();          // all tutors initially
+  fillTrendStudentsFiltered();
 
   // Year dropdown: current year and a few back; default to current year + month
   const now = new Date();
@@ -631,27 +638,49 @@ function fmtMonth(ym){
   if(p.length>=2){ const mi=parseInt(p[1],10)-1; if(mi>=0&&mi<12) return MONTHS[mi]+' '+p[0]; }
   return ym;
 }
-// Populate the student dropdown, limited to a batch key or a country
-function fillTrendStudents(batchKey, country){
+// Populate the student dropdown, limited to a batch key / country / tutor
+function fillTrendStudents(batchKey, country, tutor){
   const sel = document.getElementById('aStudent');
   sel.innerHTML = '<option value="">All students</option>';
   trendStudents
     .filter(st=>{
-      if(batchKey) return st.batch===batchKey;
-      if(country) return String(st.batch||'').indexOf(country + ' · ')===0; // batch starts with "Country · "
+      if(batchKey && st.batch!==batchKey) return false;
+      if(!batchKey && country && String(st.batch||'').indexOf(country + ' · ')!==0) return false;
+      if(tutor && (st.tutor||'')!==tutor) return false;
       return true;
     })
     .forEach(st=>{
       const o=document.createElement('option'); o.value=st.id; o.textContent=`${st.name} (${st.id})`; sel.appendChild(o);
     });
 }
-// When country changes: load that country's batch timings, reset student
+// Load the Tutor dropdown for the current country/batch selection
+async function loadTrendTutors(){
+  const country = document.getElementById('aCountry').value;
+  const batch = trendBatchKey();
+  const tsel = document.getElementById('aTutor');
+  tsel.innerHTML = '<option value="">All tutors</option>';
+  labelSpin('aTutor', true);
+  const params = {action:'tutors'};
+  if(batch) params.batch = batch; else if(country) params.country = country;
+  const r = await apiGet(params);
+  labelSpin('aTutor', false);
+  (r.tutors||[]).forEach(name=>{
+    const o=document.createElement('option'); o.value=name; o.textContent=name; tsel.appendChild(o);
+  });
+}
+// When tutor changes: narrow students to that tutor, reload
+function onTrendTutorChange(){
+  fillTrendStudentsFiltered();
+  loadTrend();
+}
+// When country changes: load that country's batch timings + tutors, reset student
 async function onTrendCountryChange(){
   const country = document.getElementById('aCountry').value;
   const bsel = document.getElementById('aBatch');
   if(!country){
     bsel.innerHTML = '<option value="">All batches</option>';
-    fillTrendStudents('', ''); loadTrend(); return;
+    await loadTrendTutors();
+    fillTrendStudentsFiltered(); loadTrend(); return;
   }
   bsel.innerHTML = '<option>Loading…</option>'; bsel.disabled = true; labelSpin('aBatch', true);
   const r = await apiGet({action:'batches', country});
@@ -659,11 +688,13 @@ async function onTrendCountryChange(){
   bsel.disabled = false;
   bsel.innerHTML = '<option value="">All batches</option>' +
     ((r.batches)||[]).map(b=>`<option>${b}</option>`).join('');
-  fillTrendStudents('', country);   // students in this country
+  await loadTrendTutors();
+  fillTrendStudentsFiltered();
   loadTrend();
 }
-// When batch changes: refilter students, reload
-function onTrendBatchChange(){
+// When batch changes: refresh tutors for the batch, refilter students, reload
+async function onTrendBatchChange(){
+  await loadTrendTutors();
   fillTrendStudentsFiltered();
   loadTrend();
 }
@@ -673,12 +704,13 @@ function trendBatchKey(){
   const timing = document.getElementById('aBatch').value;
   return timing ? makeBatchKey(country, timing) : '';
 }
-// Filter the student dropdown by the current batch (if any) or country (if any)
+// Filter the student dropdown by the current batch / country / tutor
 function fillTrendStudentsFiltered(){
   const country = document.getElementById('aCountry').value;
   const timing = document.getElementById('aBatch').value;
+  const tutor = document.getElementById('aTutor').value;
   const batchKey = timing ? makeBatchKey(country, timing) : '';
-  fillTrendStudents(batchKey, country);
+  fillTrendStudents(batchKey, country, tutor);
 }
 let trendChartObj = null;
 let lastTrendData = null;   // cached for redraw on viewport change
@@ -687,11 +719,12 @@ async function loadTrend(){
   const studentId = document.getElementById('aStudent').value;
   const country = document.getElementById('aCountry').value;
   const batch = trendBatchKey();   // only set when a specific batch timing chosen
+  const tutor = document.getElementById('aTutor').value;
   const month = document.getElementById('aMonth').value;
   const year = document.getElementById('aYear').value;
   const card = document.getElementById('trendCard');
   card.innerHTML='<div class="empty"><span class="spin"></span> Loading…</div>';
-  const r = await apiGet({action:'attendanceTrend', studentId, batch, country, month, year});
+  const r = await apiGet({action:'attendanceTrend', studentId, batch, country, tutor, month, year});
   if(!r.ok){ card.innerHTML='<div class="empty">'+(r.error||'Error')+'</div>'; drawTrendChart([]); return; }
   const t = r.trend||[];
   if(!t.length){ card.innerHTML='<div class="empty">No attendance recorded for this selection yet.</div>'; drawTrendChart([]); return; }
